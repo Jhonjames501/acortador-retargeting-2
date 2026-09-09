@@ -24,7 +24,7 @@ app.post('/shorten', (req, res) => {
     // Generar un alias aleatorio si el usuario no puso uno
     const alias = customAlias && customAlias.trim() !== '' 
         ? customAlias.trim() 
-        : Math.random().toString(36.substring(2, 8));
+        : Math.random().toString(36).substring(2, 8);
     
     // Guardar la relación en la memoria
     urlDatabase[alias] = originalUrl;
