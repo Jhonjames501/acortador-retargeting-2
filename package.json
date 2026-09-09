@@ -1,12 +1,13 @@
 {
-  "name": "acortador-retargeting",
+  "name": "acortador-retargeting-2",
   "version": "1.0.0",
-  "description": "Acortador de enlaces con retargeting B2B",
+  "description": "Acortador con Retargeting B2B",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "ejs": "^3.1.9",
     "express": "^4.19.2"
   }
 }
