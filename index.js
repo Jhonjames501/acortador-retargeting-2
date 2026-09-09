@@ -1,120 +1,215 @@
 const express = require('express');
-const path = require('path');
 const sqlite3 = require('sqlite3').verbose();
-const { open } = require('sqlite');
-
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.set('view engine', 'ejs');
-app.set('views', __dirname);
-
+// Configuración básica de Express para leer datos de formularios
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Inicializar la Base de Datos SQLite (persistencia permanente)
-let db;
-async function initializeDatabase() {
-    db = await open({
-        filename: path.join(__dirname, 'database.sqlite'),
-        driver: sqlite3.Database
+// ==========================================
+// 1. INICIALIZACIÓN DE LA BASE DE DATOS (PASO 1)
+// ==========================================
+const db = new sqlite3.Database('./database.sqlite', (err) => {
+    if (err) {
+        console.error('Error al abrir la base de datos', err.message);
+    } else {
+        console.log('Conectado a la base de datos SQLite.');
+    }
+});
+
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        url_destino TEXT NOT NULL,
+        alias TEXT UNIQUE NOT NULL,
+        clicks INTEGER DEFAULT 0,
+        pixel_id TEXT,
+        expires_at DATETIME,
+        password TEXT
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS clicks_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        link_alias TEXT,
+        clicked_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        device TEXT
+    )`);
+});
+
+// ==========================================
+// 2. INTERFAZ VISUAL (HTML con Opciones Avanzadas)
+// ==========================================
+app.get('/', (req, res) => {
+    db.all(`SELECT * FROM links ORDER BY id DESC`, [], (err, rows) => {
+        let enlacesHtml = '';
+        if (!err && rows) {
+            rows.forEach(link => {
+                enlacesHtml += `
+                    <div style="background: #12121a; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #333;">
+                        <span style="color: #a855f7; font-weight: bold;">/${link.alias}</span> (${link.clicks} clics)
+                        <div style="font-size: 12px; color: #888; word-break: break-all;">Destino: ${link.url_destino}</div>
+                        <a href="/${link.alias}" target="_blank" style="color: #38bdf8; font-size: 12px; text-decoration: none;">Probar Enlace</a>
+                    </div>
+                `;
+            });
+        }
+
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <title>LinkPulse - Acortador Inteligente</title>
+                <style>
+                    body { font-family: Arial, sans-serif; background: #0b0b10; color: #fff; display: flex; justify-content: center; padding: 40px 20px; }
+                    .container { width: 100%; max-width: 500px; background: #161622; padding: 25px; border-radius: 10px; border: 1px solid #2a2a3d; }
+                    h2 { text-align: center; color: #a855f7; }
+                    .form-group { margin-bottom: 15px; }
+                    label { display: block; margin-bottom: 5px; font-size: 13px; color: #bbb; }
+                    input { width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #333; color: #fff; border-radius: 5px; box-sizing: border-box; }
+                    button { width: 100%; padding: 12px; background: #8b5cf6; border: none; color: white; font-weight: bold; border-radius: 5px; cursor: pointer; }
+                    button:hover { background: #7c3aed; }
+                    fieldset { border: 1px solid #333; border-radius: 5px; padding: 10px; margin-bottom: 15px; }
+                    legend { color: #a855f7; font-size: 12px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h2>LinkPulse B2B SUITE</h2>
+                    <form action="/create" method="POST">
+                        <div class="form-group">
+                            <label>URL DE DESTINO (ORIGINAL)</label>
+                            <input type="url" name="url_destino" required placeholder="https://tuempresa.com/landing">
+                        </div>
+                        <div class="form-group">
+                            <label>ALIAS PERSONALIZADO (OPCIONAL)</label>
+                            <input type="text" name="alias" placeholder="oferta-verano">
+                        </div>
+                        
+                        <fieldset>
+                            <legend>Opciones Avanzadas (Opcional)</legend>
+                            <div class="form-group">
+                                <label>ID de Píxel de Retargeting (Meta/TikTok)</label>
+                                <input type="text" name="pixel_id" placeholder="Ej: 1234567890">
+                            </div>
+                            <div class="form-group">
+                                <label>Contraseña de protección</label>
+                                <input type="password" name="password" placeholder="Opcional">
+                            </div>
+                            <div class="form-group">
+                                <label>Fecha de expiración</label>
+                                <input type="datetime-local" name="expires_at">
+                            </div>
+                        </fieldset>
+
+                        <button type="submit">Generar Enlace Acortado</button>
+                    </form>
+
+                    <h3 style="margin-top: 30px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 5px;">Enlaces Recientes & Clics</h3>
+                    ${enlacesHtml || '<p style="color: #666; font-size: 13px;">No hay enlaces creados todavía.</p>'}
+                </div>
+            </body>
+            </html>
+        `);
     });
-
-    // Crear la tabla si no existe
-    await db.exec(`
-        CREATE TABLE IF NOT EXISTS links (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            alias TEXT UNIQUE,
-            originalUrl TEXT,
-            clicks INTEGER DEFAULT 0,
-            createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    `);
-    console.log("Base de datos SQLite conectada y lista.");
-}
-
-initializeDatabase();
-
-// Ruta principal (Muestra la interfaz y la lista de enlaces recientes con estadísticas)
-app.get('/', async (req, res) => {
-    try {
-        const links = db ? await db.all('SELECT * FROM links ORDER BY id DESC LIMIT 5') : [];
-        res.render('index', { shortUrl: null, originalUrl: null, links, error: null });
-    } catch (error) {
-        res.render('index', { shortUrl: null, originalUrl: null, links: [], error: null });
-    }
 });
 
-// Ruta para generar el enlace y guardarlo en SQLite
-app.post('/shorten', async (req, res) => {
-    const { originalUrl, customAlias } = req.body;
+// ==========================================
+// 3. CREAR NUEVO ENLACE (Guardar en DB)
+// ==========================================
+app.post('/create', (req, res) => {
+    let { url_destino, alias, pixel_id, password, expires_at } = req.body;
     
-    let alias = customAlias && customAlias.trim() !== '' 
-        ? customAlias.trim() 
-        : Math.random().toString(36).substring(2, 8);
+    // Si no ingresa alias, generar uno aleatorio corto
+    const linkAlias = alias && alias.trim() !== '' ? alias.trim() : Math.random().toString(36).substring(2, 8);
 
-    try {
-        await db.run(
-            'INSERT INTO links (alias, originalUrl, clicks) VALUES (?, ?, ?)',
-            [alias, originalUrl, 0]
-        );
-
-        const mockShortUrl = `https://acortador-retargeting-2.onrender.com/${alias}`;
-        const links = await db.all('SELECT * FROM links ORDER BY id DESC LIMIT 5');
-        
-        res.render('index', { shortUrl: mockShortUrl, originalUrl, links, error: null });
-    } catch (error) {
-        const links = await db.all('SELECT * FROM links ORDER BY id DESC LIMIT 5');
-        res.render('index', { shortUrl: null, originalUrl, links, error: 'El alias personalizado ya está en uso. Prueba con otro.' });
-    }
+    const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES (?, ?, ?, ?, ?)`;
+    
+    db.run(query, [url_destino, linkAlias, pixel_id || null, password || null, expires_at || null], (err) => {
+        if (err) {
+            return res.send(`<script>alert('El alias ya existe o hubo un error.'); window.location.href='/';</script>`);
+        }
+        res.redirect('/');
+    });
 });
 
-// Ruta que captura el alias corto, suma +1 al contador y redirige
-app.get('/:alias', async (req, res) => {
+// ==========================================
+// 4. REDIRECCIÓN INTELIGENTE, PÍXELES Y SEGURIDAD
+// ==========================================
+app.get('/:alias', (req, res) => {
     const alias = req.params.alias;
 
-    try {
-        const link = await db.get('SELECT * FROM links WHERE alias = ?', [alias]);
+    db.get(`SELECT * FROM links WHERE alias = ?`, [alias], (err, link) => {
+        if (err || !link) {
+            return res.status(404).send("Enlace no encontrado.");
+        }
 
-        if (link) {
-            await db.run('UPDATE links SET clicks = clicks + 1 WHERE alias = ?', [alias]);
+        // 1. Verificar si el enlace ha expirado
+        if (link.expires_at && new Date() > new Date(link.expires_at)) {
+            return res.status(410).send("<h2 style='text-align:center; margin-top:50px;'>Este enlace ha expirado.</h2>");
+        }
 
+        // 2. Verificar contraseña si está protegida
+        if (link.password) {
+            const userPwd = req.query.pwd;
+            if (userPwd !== link.password) {
+                return res.send(`
+                    <div style="max-width: 400px; margin: 100px auto; background: #161622; padding: 20px; border-radius: 8px; color: #fff; font-family: sans-serif; text-align: center; border: 1px solid #333;">
+                        <h3>Enlace Protegido</h3>
+                        <p style="font-size: 13px; color: #aaa;">Ingresa la contraseña para continuar:</p>
+                        <form method="GET">
+                            <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 8px; background: #1a1a2e; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box;">
+                            <button type="submit" style="width: 100%; padding: 8px; background: #8b5cf6; border: none; color: #fff; border-radius: 4px; cursor: pointer;">Acceder</button>
+                        </form>
+                    </div>
+                `);
+            }
+        }
+
+        // 3. Registrar analítica y sumar clic
+        db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
+        db.run(`clicks_log` in db ? `` : `INSERT INTO clicks_log (link_alias, device) VALUES (?, ?)`, [alias, req.headers['user-agent'] || 'Desconocido']);
+
+        // 4. Si tiene Píxel configurado, mostrar página intermedia con el script de rastreo
+        if (link.pixel_id) {
             return res.send(`
                 <!DOCTYPE html>
-                <html lang="es">
+                <html>
                 <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Abriendo enlace...</title>
-                    <script src="https://cdn.tailwindcss.com"></script>
-                </head>
-                <body class="bg-slate-950 text-white flex items-center justify-center h-screen px-4">
-                    <div class="text-center p-6 max-w-sm w-full bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl">
-                        <div class="animate-pulse mb-4">
-                            <span class="inline-block bg-purple-600/20 text-purple-400 p-3 rounded-full text-2xl">⚡</span>
-                        </div>
-                        <h1 class="text-lg font-bold mb-2">Redirigiendo a tu contenido...</h1>
-                        <p class="text-slate-400 text-xs mb-6">Si no se abre automáticamente en la aplicación, presiona el botón de abajo.</p>
-                        <a href="${link.originalUrl}" class="w-full block bg-purple-600 hover:bg-purple-700 text-white font-medium py-3 px-4 rounded-xl transition duration-200 shadow-lg shadow-purple-600/30 text-sm">
-                            Abrir en la aplicación
-                        </a>
-                    </div>
+                    <title>Redirigiendo...</title>
                     <script>
-                        setTimeout(() => {
-                            window.location.href = "${link.originalUrl}";
-                        }, 500);
+                      !function(f,b,e,v,n,t,s)
+                      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+                      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+                      if(!f._fbq)f._fbq=n;n.push(n.ready=!0;n.version='2.0';
+                      n.queue=[];t=b.createElement(e);t.async=!0;
+                      t.src=v;s=b.getElementsByTagName(e)[0];
+                      s.parentNode.insertBefore(t,s)}(window, document,'script',
+                      'https://connect.facebook.net/en_US/fbevents.js');
+                      fbq('init', '${link.pixel_id}');
+                      fbq('track', 'PageView');
+                    </script>
+                    <meta http-equiv="refresh" content="1;url=${link.url_destino}">
+                </head>
+                <body style="background: #0b0b10; color: #fff; font-family: sans-serif; text-align: center; padding-top: 100px;">
+                    <p>Redirigiendo a tu destino...</p>
+                    <script>
+                        setTimeout(function() {
+                            window.location.href = "${link.url_destino}";
+                        }, 800);
                     </script>
                 </body>
                 </html>
             `);
-        } else {
-            return res.redirect('/');
         }
-    } catch (error) {
-        return res.redirect('/');
-    }
+
+        // 5. Si no tiene píxel, redirección limpia inmediata
+        res.redirect(link.url_destino);
+    });
 });
 
+// Iniciar servidor en el puerto que asigne Render o el 3000 por defecto
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto ${PORT}`);
 });
