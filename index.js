@@ -33,7 +33,7 @@ db.serialize(() => {
 });
 
 // ==========================================
-// 2. PANEL PRINCIPAL (Interfaz Web & QR)
+// 2. PANEL PRINCIPAL (Diseño Original y Estilizado)
 // ==========================================
 app.get('/', async (req, res) => {
     db.all(`SELECT * FROM links ORDER BY id DESC`, [], async (err, rows) => {
@@ -45,22 +45,20 @@ app.get('/', async (req, res) => {
                 
                 let qrSvg = '';
                 try {
-                    qrSvg = await QRCode.toString(fullShortUrl, { type: 'svg', width: 85, margin: 1 });
+                    qrSvg = await QRCode.toString(fullShortUrl, { type: 'svg', width: 75, margin: 1 });
                 } catch (e) {
-                    qrSvg = '<p style="font-size:10px; color:red;">Error QR</p>';
+                    qrSvg = '';
                 }
 
                 enlacesHtml += `
-                    <div style="background: #12121a; padding: 15px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #2a2a3d; display: flex; justify-content: space-between; align-items: center;">
+                    <div style="background: rgba(26, 26, 46, 0.6); padding: 14px; margin-top: 10px; border-radius: 8px; border: 1px solid rgba(168, 85, 247, 0.2); display: flex; justify-content: space-between; align-items: center;">
                         <div style="overflow: hidden; padding-right: 10px;">
-                            <span style="color: #a855f7; font-weight: bold; font-size: 15px;">/${link.alias}</span> 
-                            <span style="font-size: 12px; color: #888;">(${link.clicks} clics)</span>
-                            <div style="font-size: 12px; color: #aaa; word-break: break-all; margin-top: 4px;">Destino: ${link.url_destino}</div>
-                            <a href="/${link.alias}" target="_blank" style="color: #38bdf8; font-size: 12px; text-decoration: none; display: inline-block; margin-top: 6px;">Probar Enlace</a>
+                            <span style="color: #a855f7; font-weight: bold; font-size: 14px; background: rgba(168,85,247,0.1); padding: 3px 8px; border-radius: 4px; display: inline-block; margin-bottom: 5px;">/${link.alias}</span> 
+                            <span style="font-size: 11px; color: #aaa;">(${link.clicks} clics)</span>
+                            <div style="font-size: 12px; color: #888; word-break: break-all; margin-top: 2px;">${link.url_destino}</div>
+                            <a href="/${link.alias}" target="_blank" style="color: #38bdf8; font-size: 11px; text-decoration: none; display: inline-block; margin-top: 4px;">Probar Enlace &rarr;</a>
                         </div>
-                        <div style="background: #fff; padding: 4px; border-radius: 4px; text-align: center; flex-shrink: 0;">
-                            ${qrSvg}
-                        </div>
+                        ${qrSvg ? `<div style="background: #fff; padding: 4px; border-radius: 6px; text-align: center; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.3);">${qrSvg}</div>` : ''}
                     </div>
                 `;
             }
@@ -74,23 +72,145 @@ app.get('/', async (req, res) => {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>LinkPulse - Acortador Inteligente & Retargeting</title>
                 <style>
-                    body { font-family: Arial, sans-serif; background: #0b0b10; color: #fff; margin: 0; padding: 30px 15px; display: flex; justify-content: center; }
-                    .container { width: 100%; max-width: 520px; background: #161622; padding: 25px; border-radius: 12px; border: 1px solid #2a2a3d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-                    h2 { text-align: center; color: #a855f7; margin-bottom: 20px; font-size: 20px; }
-                    .form-group { margin-bottom: 15px; }
-                    label { display: block; margin-bottom: 5px; font-size: 12px; color: #aaa; font-weight: bold; text-transform: uppercase; }
-                    input { width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #333; color: #fff; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
-                    input:focus { border-color: #8b5cf6; outline: none; }
-                    button { width: 100%; padding: 12px; background: #8b5cf6; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; transition: background 0.2s; }
-                    button:hover { background: #7c3aed; }
-                    fieldset { border: 1px solid #2a2a3d; border-radius: 6px; padding: 12px; margin-bottom: 15px; background: #12121a; }
-                    legend { color: #a855f7; font-size: 12px; font-weight: bold; padding: 0 5px; }
-                    .section-title { margin-top: 25px; font-size: 15px; border-bottom: 1px solid #2a2a3d; padding-bottom: 8px; color: #ddd; }
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+                        background: #07070b; 
+                        color: #fff; 
+                        margin: 0; 
+                        padding: 20px 10px; 
+                        display: flex; 
+                        justify-content: center; 
+                    }
+                    .container { 
+                        width: 100%; 
+                        max-width: 500px; 
+                        background: #111119; 
+                        padding: 24px; 
+                        border-radius: 14px; 
+                        border: 1px solid rgba(255, 255, 255, 0.08); 
+                        box-shadow: 0 10px 30px rgba(0,0,0,0.6); 
+                    }
+                    .logo-area {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                        margin-bottom: 20px;
+                    }
+                    .badge {
+                        background: rgba(168, 85, 247, 0.15);
+                        color: #a855f7;
+                        font-size: 10px;
+                        font-weight: bold;
+                        padding: 3px 8px;
+                        border-radius: 20px;
+                        letter-spacing: 0.5px;
+                        border: 1px solid rgba(168, 85, 247, 0.3);
+                    }
+                    h2 { 
+                        text-align: center; 
+                        color: #fff; 
+                        margin: 0; 
+                        font-size: 18px; 
+                        font-weight: 600;
+                    }
+                    .subtitle {
+                        text-align: center;
+                        color: #71717a;
+                        font-size: 12px;
+                        margin-top: 5px;
+                        margin-bottom: 25px;
+                    }
+                    .form-group { 
+                        margin-bottom: 14px; 
+                    }
+                    label { 
+                        display: block; 
+                        margin-bottom: 6px; 
+                        font-size: 11px; 
+                        color: #a1a1aa; 
+                        font-weight: 600; 
+                        letter-spacing: 0.5px;
+                        text-transform: uppercase; 
+                    }
+                    input { 
+                        width: 100%; 
+                        padding: 11px 14px; 
+                        background: #181824; 
+                        border: 1px solid #27273a; 
+                        color: #fff; 
+                        border-radius: 8px; 
+                        box-sizing: border-box; 
+                        font-size: 13px; 
+                        transition: all 0.2s;
+                    }
+                    input:focus { 
+                        border-color: #a855f7; 
+                        outline: none; 
+                        box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.15);
+                    }
+                    button { 
+                        width: 100%; 
+                        padding: 13px; 
+                        background: linear-gradient(135deg, #9333ea, #7c3aed); 
+                        border: none; 
+                        color: white; 
+                        font-weight: bold; 
+                        border-radius: 8px; 
+                        cursor: pointer; 
+                        font-size: 14px; 
+                        margin-top: 5px;
+                        transition: opacity 0.2s; 
+                        box-shadow: 0 4px 12px rgba(147, 51, 234, 0.3);
+                    }
+                    button:hover { 
+                        opacity: 0.9; 
+                    }
+                    fieldset { 
+                        border: 1px solid #222232; 
+                        border-radius: 8px; 
+                        padding: 12px 14px; 
+                        margin: 18px 0; 
+                        background: rgba(18, 18, 26, 0.5); 
+                    }
+                    legend { 
+                        color: #a855f7; 
+                        font-size: 11px; 
+                        font-weight: bold; 
+                        padding: 0 6px; 
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
+                    .section-title { 
+                        margin-top: 30px; 
+                        font-size: 13px; 
+                        font-weight: bold;
+                        border-bottom: 1px solid #222232; 
+                        padding-bottom: 8px; 
+                        color: #a1a1aa; 
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    .db-tag {
+                        font-size: 10px;
+                        color: #52525b;
+                        background: #181824;
+                        padding: 2px 6px;
+                        border-radius: 4px;
+                    }
                 </style>
             </head>
             <body>
                 <div class="container">
-                    <h2>LinkPulse B2B SUITE</h2>
+                    <div class="logo-area">
+                        <h2>LinkPulse</h2>
+                        <span class="badge">B2B SUITE</span>
+                    </div>
+                    <div class="subtitle">Crea enlaces corporativos de alto rendimiento, rastrea conversiones y despliega píxeles de retargeting en tiempo real.</div>
+                    
                     <form action="/create" method="POST">
                         <div class="form-group">
                             <label>URL de Destino (Original)</label>
@@ -104,7 +224,7 @@ app.get('/', async (req, res) => {
                         <fieldset>
                             <legend>Opciones Avanzadas</legend>
                             <div class="form-group" style="margin-bottom: 10px;">
-                                <label>ID de Píxel de Retargeting (Meta/TikTok)</label>
+                                <label>ID de Píxel (Meta / TikTok)</label>
                                 <input type="text" name="pixel_id" placeholder="Ej: 1234567890">
                             </div>
                             <div class="form-group" style="margin-bottom: 10px;">
@@ -117,12 +237,16 @@ app.get('/', async (req, res) => {
                             </div>
                         </fieldset>
 
-                        <button type="submit">Generar Enlace Acortado & QR</button>
+                        <button type="submit">Generar Enlace Acortado</button>
                     </form>
 
-                    <div class="section-title">Enlaces Recientes, Clics & QR</div>
-                    <div style="margin-top: 15px;">
-                        ${enlacesHtml || '<p style="color: #666; font-size: 13px; text-align: center;">No hay enlaces creados todavía.</p>'}
+                    <div class="section-title">
+                        <span>Enlaces Recientes & Clics</span>
+                        <span class="db-tag">BASE DE DATOS SQLITE</span>
+                    </div>
+                    
+                    <div style="margin-top: 10px;">
+                        ${enlacesHtml || '<p style="color: #52525b; font-size: 12px; text-align: center; padding: 15px 0;">No hay enlaces creados todavía.</p>'}
                     </div>
                 </div>
             </body>
@@ -159,12 +283,10 @@ app.get('/:alias', (req, res) => {
             return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif;'>Enlace no encontrado.</h2>");
         }
 
-        // Validar expiración
         if (link.expires_at && new Date() > new Date(link.expires_at)) {
             return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555;'>Este enlace ha expirado.</h2>");
         }
 
-        // Validar contraseña
         if (link.password) {
             const userPwd = req.query.pwd;
             if (userPwd !== link.password) {
@@ -172,13 +294,13 @@ app.get('/:alias', (req, res) => {
                     <!DOCTYPE html>
                     <html>
                     <head><title>Protegido</title></head>
-                    <body style="background: #0b0b10; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0;">
-                        <div style="width: 100%; max-width: 380px; background: #161622; padding: 25px; border-radius: 10px; border: 1px solid #333; text-align: center;">
-                            <h3 style="color: #a855f7; margin-top: 0;">Enlace Protegido</h3>
-                            <p style="font-size: 13px; color: #aaa;">Ingresa la contraseña para continuar:</p>
+                    <body style="background: #07070b; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0;">
+                        <div style="width: 100%; max-width: 360px; background: #111119; padding: 24px; border-radius: 12px; border: 1px solid #222232; text-align: center;">
+                            <h3 style="color: #a855f7; margin-top: 0; font-size: 16px;">Enlace Protegido</h3>
+                            <p style="font-size: 12px; color: #a1a1aa; margin-bottom: 16px;">Ingresa la contraseña para continuar:</p>
                             <form method="GET">
-                                <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #444; color: #fff; border-radius: 5px; margin-bottom: 12px; box-sizing: border-box;">
-                                <button type="submit" style="width: 100%; padding: 10px; background: #8b5cf6; border: none; color: #fff; border-radius: 5px; cursor: pointer; font-weight: bold;">Acceder</button>
+                                <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 11px; background: #181824; border: 1px solid #27273a; color: #fff; border-radius: 8px; margin-bottom: 12px; box-sizing: border-box; font-size: 13px;">
+                                <button type="submit" style="width: 100%; padding: 11px; background: #9333ea; border: none; color: #fff; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px;">Acceder</button>
                             </form>
                         </div>
                     </body>
@@ -187,10 +309,8 @@ app.get('/:alias', (req, res) => {
             }
         }
 
-        // Registrar analítica y conteo de clics
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
 
-        // Si tiene Píxel de Retargeting configurado
         if (link.pixel_id) {
             return res.send(`
                 <!DOCTYPE html>
@@ -211,8 +331,8 @@ app.get('/:alias', (req, res) => {
                     </script>
                     <meta http-equiv="refresh" content="1;url=${link.url_destino}">
                 </head>
-                <body style="background: #0b0b10; color: #fff; font-family: sans-serif; text-align: center; padding-top: 150px;">
-                    <p style="color: #aaa; font-size: 14px;">Redirigiendo a tu destino...</p>
+                <body style="background: #07070b; color: #fff; font-family: sans-serif; text-align: center; padding-top: 150px;">
+                    <p style="color: #71717a; font-size: 13px;">Redirigiendo a tu destino...</p>
                     <script>
                         setTimeout(function() {
                             window.location.href = "${link.url_destino}";
@@ -223,7 +343,6 @@ app.get('/:alias', (req, res) => {
             `);
         }
 
-        // Redirección directa inmediata
         res.redirect(link.url_destino);
     });
 });
