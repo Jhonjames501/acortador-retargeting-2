@@ -1,20 +1,16 @@
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
+const QRCode = require('qrcode');
 const app = express();
 
-// Configuración básica de Express para leer datos de formularios
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // ==========================================
-// 1. INICIALIZACIÓN DE LA BASE DE DATOS (PASO 1)
+// 1. BASE DE DATOS SQLITE
 // ==========================================
 const db = new sqlite3.Database('./database.sqlite', (err) => {
-    if (err) {
-        console.error('Error al abrir la base de datos', err.message);
-    } else {
-        console.log('Conectado a la base de datos SQLite.');
-    }
+    if (err) console.error('Error al abrir la base de datos', err.message);
 });
 
 db.serialize(() => {
@@ -37,21 +33,37 @@ db.serialize(() => {
 });
 
 // ==========================================
-// 2. INTERFAZ VISUAL (HTML con Opciones Avanzadas)
+// 2. PANEL PRINCIPAL (Interfaz Web & QR)
 // ==========================================
-app.get('/', (req, res) => {
-    db.all(`SELECT * FROM links ORDER BY id DESC`, [], (err, rows) => {
+app.get('/', async (req, res) => {
+    db.all(`SELECT * FROM links ORDER BY id DESC`, [], async (err, rows) => {
         let enlacesHtml = '';
+        
         if (!err && rows) {
-            rows.forEach(link => {
+            for (let link of rows) {
+                const fullShortUrl = `${req.protocol}://${req.get('host')}/${link.alias}`;
+                
+                let qrSvg = '';
+                try {
+                    qrSvg = await QRCode.toString(fullShortUrl, { type: 'svg', width: 85, margin: 1 });
+                } catch (e) {
+                    qrSvg = '<p style="font-size:10px; color:red;">Error QR</p>';
+                }
+
                 enlacesHtml += `
-                    <div style="background: #12121a; padding: 12px; margin-bottom: 10px; border-radius: 6px; border: 1px solid #333;">
-                        <span style="color: #a855f7; font-weight: bold;">/${link.alias}</span> (${link.clicks} clics)
-                        <div style="font-size: 12px; color: #888; word-break: break-all;">Destino: ${link.url_destino}</div>
-                        <a href="/${link.alias}" target="_blank" style="color: #38bdf8; font-size: 12px; text-decoration: none;">Probar Enlace</a>
+                    <div style="background: #12121a; padding: 15px; margin-bottom: 12px; border-radius: 8px; border: 1px solid #2a2a3d; display: flex; justify-content: space-between; align-items: center;">
+                        <div style="overflow: hidden; padding-right: 10px;">
+                            <span style="color: #a855f7; font-weight: bold; font-size: 15px;">/${link.alias}</span> 
+                            <span style="font-size: 12px; color: #888;">(${link.clicks} clics)</span>
+                            <div style="font-size: 12px; color: #aaa; word-break: break-all; margin-top: 4px;">Destino: ${link.url_destino}</div>
+                            <a href="/${link.alias}" target="_blank" style="color: #38bdf8; font-size: 12px; text-decoration: none; display: inline-block; margin-top: 6px;">Probar Enlace</a>
+                        </div>
+                        <div style="background: #fff; padding: 4px; border-radius: 4px; text-align: center; flex-shrink: 0;">
+                            ${qrSvg}
+                        </div>
                     </div>
                 `;
-            });
+            }
         }
 
         res.send(`
@@ -59,18 +71,21 @@ app.get('/', (req, res) => {
             <html lang="es">
             <head>
                 <meta charset="UTF-8">
-                <title>LinkPulse - Acortador Inteligente</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>LinkPulse - Acortador Inteligente & Retargeting</title>
                 <style>
-                    body { font-family: Arial, sans-serif; background: #0b0b10; color: #fff; display: flex; justify-content: center; padding: 40px 20px; }
-                    .container { width: 100%; max-width: 500px; background: #161622; padding: 25px; border-radius: 10px; border: 1px solid #2a2a3d; }
-                    h2 { text-align: center; color: #a855f7; }
+                    body { font-family: Arial, sans-serif; background: #0b0b10; color: #fff; margin: 0; padding: 30px 15px; display: flex; justify-content: center; }
+                    .container { width: 100%; max-width: 520px; background: #161622; padding: 25px; border-radius: 12px; border: 1px solid #2a2a3d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+                    h2 { text-align: center; color: #a855f7; margin-bottom: 20px; font-size: 20px; }
                     .form-group { margin-bottom: 15px; }
-                    label { display: block; margin-bottom: 5px; font-size: 13px; color: #bbb; }
-                    input { width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #333; color: #fff; border-radius: 5px; box-sizing: border-box; }
-                    button { width: 100%; padding: 12px; background: #8b5cf6; border: none; color: white; font-weight: bold; border-radius: 5px; cursor: pointer; }
+                    label { display: block; margin-bottom: 5px; font-size: 12px; color: #aaa; font-weight: bold; text-transform: uppercase; }
+                    input { width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #333; color: #fff; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+                    input:focus { border-color: #8b5cf6; outline: none; }
+                    button { width: 100%; padding: 12px; background: #8b5cf6; border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; font-size: 15px; transition: background 0.2s; }
                     button:hover { background: #7c3aed; }
-                    fieldset { border: 1px solid #333; border-radius: 5px; padding: 10px; margin-bottom: 15px; }
-                    legend { color: #a855f7; font-size: 12px; }
+                    fieldset { border: 1px solid #2a2a3d; border-radius: 6px; padding: 12px; margin-bottom: 15px; background: #12121a; }
+                    legend { color: #a855f7; font-size: 12px; font-weight: bold; padding: 0 5px; }
+                    .section-title { margin-top: 25px; font-size: 15px; border-bottom: 1px solid #2a2a3d; padding-bottom: 8px; color: #ddd; }
                 </style>
             </head>
             <body>
@@ -78,35 +93,37 @@ app.get('/', (req, res) => {
                     <h2>LinkPulse B2B SUITE</h2>
                     <form action="/create" method="POST">
                         <div class="form-group">
-                            <label>URL DE DESTINO (ORIGINAL)</label>
+                            <label>URL de Destino (Original)</label>
                             <input type="url" name="url_destino" required placeholder="https://tuempresa.com/landing">
                         </div>
                         <div class="form-group">
-                            <label>ALIAS PERSONALIZADO (OPCIONAL)</label>
+                            <label>Alias Personalizado (Opcional)</label>
                             <input type="text" name="alias" placeholder="oferta-verano">
                         </div>
                         
                         <fieldset>
-                            <legend>Opciones Avanzadas (Opcional)</legend>
-                            <div class="form-group">
+                            <legend>Opciones Avanzadas</legend>
+                            <div class="form-group" style="margin-bottom: 10px;">
                                 <label>ID de Píxel de Retargeting (Meta/TikTok)</label>
                                 <input type="text" name="pixel_id" placeholder="Ej: 1234567890">
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" style="margin-bottom: 10px;">
                                 <label>Contraseña de protección</label>
                                 <input type="password" name="password" placeholder="Opcional">
                             </div>
-                            <div class="form-group">
+                            <div class="form-group" style="margin-bottom: 0;">
                                 <label>Fecha de expiración</label>
                                 <input type="datetime-local" name="expires_at">
                             </div>
                         </fieldset>
 
-                        <button type="submit">Generar Enlace Acortado</button>
+                        <button type="submit">Generar Enlace Acortado & QR</button>
                     </form>
 
-                    <h3 style="margin-top: 30px; font-size: 16px; border-bottom: 1px solid #333; padding-bottom: 5px;">Enlaces Recientes & Clics</h3>
-                    ${enlacesHtml || '<p style="color: #666; font-size: 13px;">No hay enlaces creados todavía.</p>'}
+                    <div class="section-title">Enlaces Recientes, Clics & QR</div>
+                    <div style="margin-top: 15px;">
+                        ${enlacesHtml || '<p style="color: #666; font-size: 13px; text-align: center;">No hay enlaces creados todavía.</p>'}
+                    </div>
                 </div>
             </body>
             </html>
@@ -115,12 +132,10 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// 3. CREAR NUEVO ENLACE (Guardar en DB)
+// 3. CREAR NUEVO ENLACE
 // ==========================================
 app.post('/create', (req, res) => {
     let { url_destino, alias, pixel_id, password, expires_at } = req.body;
-    
-    // Si no ingresa alias, generar uno aleatorio corto
     const linkAlias = alias && alias.trim() !== '' ? alias.trim() : Math.random().toString(36).substring(2, 8);
 
     const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES (?, ?, ?, ?, ?)`;
@@ -141,36 +156,41 @@ app.get('/:alias', (req, res) => {
 
     db.get(`SELECT * FROM links WHERE alias = ?`, [alias], (err, link) => {
         if (err || !link) {
-            return res.status(404).send("Enlace no encontrado.");
+            return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif;'>Enlace no encontrado.</h2>");
         }
 
-        // 1. Verificar si el enlace ha expirado
+        // Validar expiración
         if (link.expires_at && new Date() > new Date(link.expires_at)) {
-            return res.status(410).send("<h2 style='text-align:center; margin-top:50px;'>Este enlace ha expirado.</h2>");
+            return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555;'>Este enlace ha expirado.</h2>");
         }
 
-        // 2. Verificar contraseña si está protegida
+        // Validar contraseña
         if (link.password) {
             const userPwd = req.query.pwd;
             if (userPwd !== link.password) {
                 return res.send(`
-                    <div style="max-width: 400px; margin: 100px auto; background: #161622; padding: 20px; border-radius: 8px; color: #fff; font-family: sans-serif; text-align: center; border: 1px solid #333;">
-                        <h3>Enlace Protegido</h3>
-                        <p style="font-size: 13px; color: #aaa;">Ingresa la contraseña para continuar:</p>
-                        <form method="GET">
-                            <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 8px; background: #1a1a2e; border: 1px solid #444; color: #fff; border-radius: 4px; margin-bottom: 10px; box-sizing: border-box;">
-                            <button type="submit" style="width: 100%; padding: 8px; background: #8b5cf6; border: none; color: #fff; border-radius: 4px; cursor: pointer;">Acceder</button>
-                        </form>
-                    </div>
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Protegido</title></head>
+                    <body style="background: #0b0b10; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0;">
+                        <div style="width: 100%; max-width: 380px; background: #161622; padding: 25px; border-radius: 10px; border: 1px solid #333; text-align: center;">
+                            <h3 style="color: #a855f7; margin-top: 0;">Enlace Protegido</h3>
+                            <p style="font-size: 13px; color: #aaa;">Ingresa la contraseña para continuar:</p>
+                            <form method="GET">
+                                <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 10px; background: #1a1a2e; border: 1px solid #444; color: #fff; border-radius: 5px; margin-bottom: 12px; box-sizing: border-box;">
+                                <button type="submit" style="width: 100%; padding: 10px; background: #8b5cf6; border: none; color: #fff; border-radius: 5px; cursor: pointer; font-weight: bold;">Acceder</button>
+                            </form>
+                        </div>
+                    </body>
+                    </html>
                 `);
             }
         }
 
-        // 3. Registrar analítica y sumar clic
+        // Registrar analítica y conteo de clics
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
-        db.run(`clicks_log` in db ? `` : `INSERT INTO clicks_log (link_alias, device) VALUES (?, ?)`, [alias, req.headers['user-agent'] || 'Desconocido']);
 
-        // 4. Si tiene Píxel configurado, mostrar página intermedia con el script de rastreo
+        // Si tiene Píxel de Retargeting configurado
         if (link.pixel_id) {
             return res.send(`
                 <!DOCTYPE html>
@@ -191,8 +211,8 @@ app.get('/:alias', (req, res) => {
                     </script>
                     <meta http-equiv="refresh" content="1;url=${link.url_destino}">
                 </head>
-                <body style="background: #0b0b10; color: #fff; font-family: sans-serif; text-align: center; padding-top: 100px;">
-                    <p>Redirigiendo a tu destino...</p>
+                <body style="background: #0b0b10; color: #fff; font-family: sans-serif; text-align: center; padding-top: 150px;">
+                    <p style="color: #aaa; font-size: 14px;">Redirigiendo a tu destino...</p>
                     <script>
                         setTimeout(function() {
                             window.location.href = "${link.url_destino}";
@@ -203,12 +223,11 @@ app.get('/:alias', (req, res) => {
             `);
         }
 
-        // 5. Si no tiene píxel, redirección limpia inmediata
+        // Redirección directa inmediata
         res.redirect(link.url_destino);
     });
 });
 
-// Iniciar servidor en el puerto que asigne Render o el 3000 por defecto
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
     console.log(`Servidor corriendo en el puerto ${PORT}`);
