@@ -2,45 +2,23 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Simulador de Base de Datos para enlaces con retargeting
-const enlacesDB = {
-    "zapatillas": {
-        urlOriginal: "https://elcomercio.pe/economia/dia-1/moda-en-peru-tendencias-noticia/",
-        pixelCode: `<script>console.log("¡Píxel de Retargeting disparado para Zapatillas!");</script>`
-    }
-};
+// Configurar EJS como motor de vistas
+app.set('view engine', 'ejs');
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
 
+// Ruta principal con la interfaz avanzada
 app.get('/', (req, res) => {
-    res.send('<h1>Bienvenido a tu Acortador con Retargeting B2B</h1><p>Usa /[codigo] para probar la redirección.</p>');
+    res.render('index', { shortUrl: null, originalUrl: null });
 });
 
-app.get('/:codigo', (req, res) => {
-    const codigo = req.params.codigo;
-    const datosEnlace = enlacesDB[codigo];
-
-    if (!datosEnlace) {
-        return res.status(404).send('Enlace no encontrado o expirado.');
-    }
-
-    const htmlRespuesta = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>Redirigiendo...</title>
-            ${datosEnlace.pixelCode}
-        </head>
-        <body>
-            <p>Redirigiendo al contenido...</p>
-            <script>
-                setTimeout(function() {
-                    window.location.href = "${datosEnlace.urlOriginal}";
-                }, 400);
-            </script>
-        </body>
-        </html>
-    `;
-
-    res.send(htmlRespuesta);
+// Ruta de ejemplo para procesar el acortamiento
+app.post('/shorten', (req, res) => {
+    const { originalUrl, customAlias } = req.body;
+    // Aquí puedes integrar la lógica para guardar en base de datos
+    const mockShortUrl = `https://acortador-retargeting-2.onrender.com/${customAlias || 'mi-enlace'}`;
+    
+    res.render('index', { shortUrl: mockShortUrl, originalUrl });
 });
 
 app.listen(PORT, () => {
