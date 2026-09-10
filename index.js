@@ -170,19 +170,25 @@ app.get('/', async (req, res) => {
 });
 
 // ==========================================
-// 3. CREAR NUEVO ENLACE
+// 3. CREAR NUEVO ENLACE (Con validación segura)
 // ==========================================
 app.post('/create', (req, res) => {
     let { url_destino, alias, pixel_id, password, expires_at } = req.body;
     const linkAlias = alias && alias.trim() !== '' ? alias.trim() : Math.random().toString(36).substring(2, 8);
 
-    const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES (?, ?, ?, ?, ?)`;
-    
-    db.run(query, [url_destino, linkAlias, pixel_id || null, password || null, expires_at || null], (err) => {
-        if (err) {
-            return res.send(`<script>alert('El alias ya existe o hubo un error.'); window.location.href='/';</script>`);
+    db.get(`SELECT id FROM links WHERE alias = ?`, [linkAlias], (err, row) => {
+        if (row) {
+            return res.send(`<script>alert('El alias "${linkAlias}" ya está en uso. Por favor, elige otro.'); window.history.back();</script>`);
         }
-        res.redirect(`/?nuevo=${linkAlias}`);
+
+        const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES (?, ?, ?, ?, ?)`;
+        
+        db.run(query, [url_destino, linkAlias, pixel_id || null, password || null, expires_at || null], (err) => {
+            if (err) {
+                return res.send(`<script>alert('Hubo un error al guardar en la base de datos.'); window.history.back();</script>`);
+            }
+            res.redirect(`/?nuevo=${linkAlias}`);
+        });
     });
 });
 
@@ -197,7 +203,6 @@ app.get('/:alias', (req, res) => {
             return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#fff; background:#07070b;'>Enlace no encontrado.</h2>");
         }
 
-        // Validación corregida y segura para evitar errores de fecha en blanco
         if (link.expires_at && link.expires_at.trim() !== '') {
             const expiryDate = new Date(link.expires_at);
             if (!isNaN(expiryDate.getTime()) && new Date() > expiryDate) {
@@ -227,10 +232,8 @@ app.get('/:alias', (req, res) => {
             }
         }
 
-        // Incrementar el contador de clics
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
 
-        // Renderizar la página intermedia moderna con cuenta regresiva y anuncios
         res.send(`
             <!DOCTYPE html>
             <html lang="es">
