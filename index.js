@@ -20,13 +20,13 @@ db.serialize(() => {
         alias TEXT UNIQUE NOT NULL,
         clicks INTEGER DEFAULT 0,
         pixel_id TEXT,
-        expires_at DATETIME,
+        expires_at TEXT,
         password TEXT
     )`);
 });
 
 // ==========================================
-// 2. PANEL PRINCIPAL (Diseño Ancho y Original)
+// 2. PANEL PRINCIPAL
 // ==========================================
 app.get('/', async (req, res) => {
     const nuevoAlias = req.query.nuevo;
@@ -187,7 +187,7 @@ app.post('/create', (req, res) => {
 });
 
 // ==========================================
-// 4. REDIRECCIÓN INTELIGENTE, PÍXELES, SEGURIDAD Y PÁGINA INTERMEDIA CON ANUNCIOS
+// 4. REDIRECCIÓN, PÍXELES Y PÁGINA INTERMEDIA
 // ==========================================
 app.get('/:alias', (req, res) => {
     const alias = req.params.alias;
@@ -197,8 +197,12 @@ app.get('/:alias', (req, res) => {
             return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#fff; background:#07070b;'>Enlace no encontrado.</h2>");
         }
 
-        if (link.expires_at && new Date() > new Date(link.expires_at)) {
-            return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Este enlace ha expirado.</h2>");
+        // Validación corregida y segura para evitar errores de fecha en blanco
+        if (link.expires_at && link.expires_at.trim() !== '') {
+            const expiryDate = new Date(link.expires_at);
+            if (!isNaN(expiryDate.getTime()) && new Date() > expiryDate) {
+                return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Este enlace ha expirado.</h2>");
+            }
         }
 
         if (link.password) {
@@ -223,10 +227,10 @@ app.get('/:alias', (req, res) => {
             }
         }
 
-        // Incrementar el contador de clics en SQLite
+        // Incrementar el contador de clics
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
 
-        // Renderizar la página intermedia moderna con indicaciones claras y diseño fluido
+        // Renderizar la página intermedia moderna con cuenta regresiva y anuncios
         res.send(`
             <!DOCTYPE html>
             <html lang="es">
