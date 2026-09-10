@@ -187,18 +187,18 @@ app.post('/create', (req, res) => {
 });
 
 // ==========================================
-// 4. REDIRECCIÓN INTELIGENTE, PÍXELES Y SEGURIDAD
+// 4. REDIRECCIÓN INTELIGENTE, PÍXELES, SEGURIDAD Y PÁGINA INTERMEDIA CON ANUNCIOS
 // ==========================================
 app.get('/:alias', (req, res) => {
     const alias = req.params.alias;
 
     db.get(`SELECT * FROM links WHERE alias = ?`, [alias], (err, link) => {
         if (err || !link) {
-            return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif;'>Enlace no encontrado.</h2>");
+            return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#fff; background:#07070b;'>Enlace no encontrado.</h2>");
         }
 
         if (link.expires_at && new Date() > new Date(link.expires_at)) {
-            return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555;'>Este enlace ha expirado.</h2>");
+            return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Este enlace ha expirado.</h2>");
         }
 
         if (link.password) {
@@ -223,41 +223,67 @@ app.get('/:alias', (req, res) => {
             }
         }
 
+        // Incrementar el contador de clics en SQLite
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
 
-        if (link.pixel_id) {
-            return res.send(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>Redirigiendo...</title>
-                    <script>
-                      !function(f,b,e,v,n,t,s)
-                      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-                      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-                      if(!f._fbq)f._fbq=n;n.push(n.ready=!0;n.version='2.0';
-                      n.queue=[];t=b.createElement(e);t.async=!0;
-                      t.src=v;s=b.getElementsByTagName(e)[0];
-                      s.parentNode.insertBefore(t,s)}(window, document,'script',
-                      'https://connect.facebook.net/en_US/fbevents.js');
-                      fbq('init', '${link.pixel_id}');
-                      fbq('track', 'PageView');
-                    </script>
-                    <meta http-equiv="refresh" content="1;url=${link.url_destino}">
-                </head>
-                <body style="background: #07070b; color: #fff; font-family: sans-serif; text-align: center; padding-top: 150px;">
-                    <p style="color: #aaa; font-size: 14px;">Redirigiendo a tu destino...</p>
-                    <script>
-                        setTimeout(function() {
-                            window.location.href = "${link.url_destino}";
-                        }, 800);
-                    </script>
-                </body>
-                </html>
-            `);
-        }
+        // Renderizar la página intermedia con Temporizador, Anuncios y Píxel de Retargeting
+        res.send(`
+            <!DOCTYPE html>
+            <html lang="es">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>LinkPulse - Redirigiendo...</title>
+                ${link.pixel_id ? `
+                <script>
+                  !function(f,b,e,v,n,t,s)
+                  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+                  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+                  if(!f._fbq)f._fbq=n;n.push(n.ready=!0;n.version='2.0';
+                  n.queue=[];t=b.createElement(e);t.async=!0;
+                  t.src=v;s=b.getElementsByTagName(e)[0];
+                  s.parentNode.insertBefore(t,s)}(window, document,'script',
+                  'https://connect.facebook.net/en_US/fbevents.js');
+                  fbq('init', '${link.pixel_id}');
+                  fbq('track', 'PageView');
+                </script>` : ''}
+                <style>
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: #07070b; color: #fff; margin: 0; padding-top: 80px; }
+                    .box { background: #12121a; padding: 30px; border-radius: 12px; display: inline-block; width: 90%; max-width: 400px; border: 1px solid #2a2a3d; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+                    .ad-container { margin: 20px 0; min-height: 90px; background: #1a1a26; border: 1px solid #2a2a3d; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; }
+                    #btn { display: none; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-decoration: none; width: 100%; box-sizing: border-box; font-size: 15px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
+                    #btn:hover { opacity: 0.9; }
+                </style>
+            </head>
+            <body>
+                <div class="box">
+                    <h2 style="color: #a855f7; margin-top: 0;">LinkPulse</h2>
+                    <p style="color: #9ca3af; font-size: 14px;">Tu enlace estará listo en <span id="countdown" style="color: #34d399; font-weight: bold;">5</span> segundos...</p>
+                    
+                    <!-- ESPACIO PUBLICITARIO (Aquí irá tu AdSense / AdMob web) -->
+                    <div class="ad-container">
+                        Espacio Publicitario
+                    </div>
 
-        res.redirect(link.url_destino);
+                    <a id="btn" href="${link.url_destino}">Continuar al destino</a>
+                </div>
+
+                <script>
+                    let seconds = 5;
+                    let timer = setInterval(() => {
+                        seconds--;
+                        document.getElementById('countdown').innerText = seconds;
+                        if (seconds <= 0) {
+                            clearInterval(timer);
+                            document.getElementById('countdown').parentElement.style.display = 'none';
+                            let btn = document.getElementById('btn');
+                            btn.style.display = 'block';
+                        }
+                    }, 1000);
+                </script>
+            </body>
+            </html>
+        `);
     });
 });
 
