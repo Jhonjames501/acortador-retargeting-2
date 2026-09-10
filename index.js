@@ -1,5 +1,5 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
+const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const app = express();
 
@@ -7,23 +7,27 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // ==========================================
-// 1. BASE DE DATOS SQLITE
+// 1. BASE DE DATOS POSTGRESQL (SUPABASE)
 // ==========================================
-const db = new sqlite3.Database('./database.sqlite', (err) => {
-    if (err) console.error('Error al abrir la base de datos', err.message);
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
 
-db.serialize(() => {
-    db.run(`CREATE TABLE IF NOT EXISTS links (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+// Crear la tabla automáticamente si no existe al iniciar
+pool.query(`
+    CREATE TABLE IF NOT EXISTS links (
+        id SERIAL PRIMARY KEY,
         url_destino TEXT NOT NULL,
         alias TEXT UNIQUE NOT NULL,
         clicks INTEGER DEFAULT 0,
         pixel_id TEXT,
         expires_at TEXT,
         password TEXT
-    )`);
-});
+    )
+`).catch(err => console.error('Error al crear la tabla en Supabase', err.message));
 
 // ==========================================
 // 2. PANEL PRINCIPAL
@@ -36,10 +40,12 @@ app.get('/', async (req, res) => {
         urlGenerada = `${req.protocol}://${req.get('host')}/${nuevoAlias}`;
     }
 
-    db.all(`SELECT * FROM links ORDER BY id DESC`, [], async (err, rows) => {
+    try {
+        const result = await pool.query(`SELECT * FROM links ORDER BY id DESC`);
+        const rows = result.rows;
         let enlacesHtml = '';
         
-        if (!err && rows) {
+        if (rows && rows.length > 0) {
             for (let link of rows) {
                 const fullShortUrl = `${req.protocol}://${req.get('host')}/${link.alias}`;
                 let qrSvg = '';
@@ -166,42 +172,48 @@ app.get('/', async (req, res) => {
             </body>
             </html>
         `);
-    });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send("Error al cargar la base de datos.");
+    }
 });
 
 // ==========================================
 // 3. CREAR NUEVO ENLACE (Con validación segura)
 // ==========================================
-app.post('/create', (req, res) => {
+app.post('/create', async (req, res) => {
     let { url_destino, alias, pixel_id, password, expires_at } = req.body;
     const linkAlias = alias && alias.trim() !== '' ? alias.trim() : Math.random().toString(36).substring(2, 8);
 
-    db.get(`SELECT id FROM links WHERE alias = ?`, [linkAlias], (err, row) => {
-        if (row) {
+    try {
+        const check = await pool.query(`SELECT id FROM links WHERE alias = $1`, [linkAlias]);
+        if (check.rows.length > 0) {
             return res.send(`<script>alert('El alias "${linkAlias}" ya está en uso. Por favor, elige otro.'); window.history.back();</script>`);
         }
 
-        const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES (?, ?, ?, ?, ?)`;
+        const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES ($1, $2, $3, $4, $5)`;
+        await pool.query(query, [url_destino, linkAlias, pixel_id || null, password || null, expires_at || null]);
         
-        db.run(query, [url_destino, linkAlias, pixel_id || null, password || null, expires_at || null], (err) => {
-            if (err) {
-                return res.send(`<script>alert('Hubo un error al guardar en la base de datos.'); window.history.back();</script>`);
-            }
-            res.redirect(`/?nuevo=${linkAlias}`);
-        });
-    });
+        res.redirect(`/?nuevo=${linkAlias}`);
+    } catch (err) {
+        console.error(err);
+        return res.send(`<script>alert('Hubo un error al guardar en la base de datos.'); window.history.back();</script>`);
+    }
 });
 
 // ==========================================
 // 4. REDIRECCIÓN, PÍXELES Y PÁGINA INTERMEDIA
 // ==========================================
-app.get('/:alias', (req, res) => {
+app.get('/:alias', async (req, res) => {
     const alias = req.params.alias;
 
-    db.get(`SELECT * FROM links WHERE alias = ?`, [alias], (err, link) => {
-        if (err || !link) {
+    try {
+        const result = await pool.query(`SELECT * FROM links WHERE alias = $1`, [alias]);
+        if (result.rows.length === 0) {
             return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#fff; background:#07070b;'>Enlace no encontrado.</h2>");
         }
+
+        const link = result.rows[0];
 
         if (link.expires_at && link.expires_at.trim() !== '') {
             const expiryDate = new Date(link.expires_at);
@@ -232,7 +244,7 @@ app.get('/:alias', (req, res) => {
             }
         }
 
-        db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
+        await pool.query(`UPDATE links SET clicks = clicks + 1 WHERE alias = $1`, [alias]);
 
         res.send(`
             <!DOCTYPE html>
@@ -384,7 +396,10 @@ app.get('/:alias', (req, res) => {
             </body>
             </html>
         `);
-    });
+    } catch (err) {
+        console.error(err);
+        return res.status(500).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Error interno del servidor.</h2>");
+    }
 });
 
 const PORT = process.env.PORT || 3000;
