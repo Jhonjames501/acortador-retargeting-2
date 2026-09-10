@@ -226,14 +226,14 @@ app.get('/:alias', (req, res) => {
         // Incrementar el contador de clics en SQLite
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
 
-        // Renderizar la página intermedia con Temporizador, Anuncios (Adsterra) y Píxel de Retargeting
+        // Renderizar la página intermedia moderna con indicaciones claras y diseño fluido
         res.send(`
             <!DOCTYPE html>
             <html lang="es">
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>LinkPulse - Redirigiendo...</title>
+                <title>LinkPulse - Redirigiendo de forma segura...</title>
                 ${link.pixel_id ? `
                 <script>
                   !function(f,b,e,v,n,t,s)
@@ -248,17 +248,94 @@ app.get('/:alias', (req, res) => {
                   fbq('track', 'PageView');
                 </script>` : ''}
                 <style>
-                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: #07070b; color: #fff; margin: 0; padding-top: 80px; }
-                    .box { background: #12121a; padding: 30px; border-radius: 12px; display: inline-block; width: 90%; max-width: 400px; border: 1px solid #2a2a3d; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-                    .ad-container { margin: 20px auto; width: 300px; min-height: 250px; background: #1a1a26; border: 1px solid #2a2a3d; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-                    #btn { display: none; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-decoration: none; width: 100%; box-sizing: border-box; font-size: 15px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
+                    body { 
+                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                        background: #07070b; 
+                        color: #fff; 
+                        margin: 0; 
+                        display: flex; 
+                        justify-content: center; 
+                        align-items: center; 
+                        min-height: 100vh; 
+                    }
+                    .redirect-card { 
+                        background: #12121a; 
+                        padding: 24px; 
+                        border-radius: 16px; 
+                        width: 90%; 
+                        max-width: 380px; 
+                        border: 1px solid #2a2a3d; 
+                        box-shadow: 0 15px 35px rgba(0,0,0,0.6); 
+                        text-align: center;
+                    }
+                    .brand-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                        margin-bottom: 15px;
+                    }
+                    .brand-icon { background: #f59e0b; color: #000; font-weight: bold; padding: 3px 7px; border-radius: 5px; font-size: 12px; }
+                    .brand-name { font-weight: bold; font-size: 15px; color: #fff; letter-spacing: 0.5px; }
+                    
+                    .info-box {
+                        background: rgba(168, 85, 247, 0.08);
+                        border: 1px solid rgba(168, 85, 247, 0.2);
+                        padding: 10px 14px;
+                        border-radius: 8px;
+                        font-size: 13px;
+                        color: #d8b4fe;
+                        margin-bottom: 20px;
+                        line-height: 1.4;
+                    }
+                    .timer-text {
+                        color: #34d399;
+                        font-weight: bold;
+                    }
+                    
+                    .ad-container { 
+                        margin: 15px auto; 
+                        width: 300px; 
+                        min-height: 250px; 
+                        background: #1a1a26; 
+                        border: 1px solid #2a2a3d; 
+                        border-radius: 10px; 
+                        display: flex; 
+                        align-items: center; 
+                        justify-content: center; 
+                        overflow: hidden; 
+                    }
+                    
+                    #btn { 
+                        display: none; 
+                        margin-top: 20px; 
+                        padding: 14px; 
+                        background: linear-gradient(135deg, #8b5cf6, #7c3aed); 
+                        color: #fff; 
+                        font-weight: bold; 
+                        border: none; 
+                        border-radius: 8px; 
+                        cursor: pointer; 
+                        text-decoration: none; 
+                        width: 100%; 
+                        box-sizing: border-box; 
+                        font-size: 15px; 
+                        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4); 
+                        transition: opacity 0.2s;
+                    }
                     #btn:hover { opacity: 0.9; }
                 </style>
             </head>
             <body>
-                <div class="box">
-                    <h2 style="color: #a855f7; margin-top: 0;">LinkPulse</h2>
-                    <p style="color: #9ca3af; font-size: 14px;">Tu enlace estará listo en <span id="countdown" style="color: #34d399; font-weight: bold;">5</span> segundos...</p>
+                <div class="redirect-card">
+                    <div class="brand-header">
+                        <div class="brand-icon">⚡</div>
+                        <span class="brand-name">LinkPulse</span>
+                    </div>
+
+                    <div class="info-box" id="status-msg">
+                        Espera <span class="timer-text" id="countdown">5</span> segundos para desbloquear tu destino de forma segura.
+                    </div>
                     
                     <!-- ESPACIO PUBLICITARIO (Adsterra Banner 300x250) -->
                     <div class="ad-container">
@@ -274,18 +351,25 @@ app.get('/:alias', (req, res) => {
                         <script src="https://www.highrevenueformat.com/f434940b00cac3b31afb1cee2d82482f/invoke.js"></script>
                     </div>
 
-                    <a id="btn" href="${link.url_destino}">Continuar al destino</a>
+                    <a id="btn" href="${link.url_destino}">Ir al enlace de destino &rarr;</a>
                 </div>
 
                 <script>
                     let seconds = 5;
+                    let countdownEl = document.getElementById('countdown');
+                    let statusMsg = document.getElementById('status-msg');
+                    let btn = document.getElementById('btn');
+
                     let timer = setInterval(() => {
                         seconds--;
-                        document.getElementById('countdown').innerText = seconds;
+                        if (countdownEl) countdownEl.innerText = seconds;
+                        
                         if (seconds <= 0) {
                             clearInterval(timer);
-                            document.getElementById('countdown').parentElement.style.display = 'none';
-                            let btn = document.getElementById('btn');
+                            statusMsg.style.background = 'rgba(16, 185, 129, 0.1)';
+                            statusMsg.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                            statusMsg.style.color = '#34d399';
+                            statusMsg.innerHTML = '¡Tu enlace está listo para continuar!';
                             btn.style.display = 'block';
                         }
                     }, 1000);
