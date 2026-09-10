@@ -226,7 +226,7 @@ app.get('/:alias', (req, res) => {
         // Incrementar el contador de clics en SQLite
         db.run(`UPDATE links SET clicks = clicks + 1 WHERE alias = ?`, [alias]);
 
-        // Renderizar la página intermedia con Temporizador, Anuncios y Píxel de Retargeting
+        // Renderizar la página intermedia con Temporizador, Anuncios (Adsterra) y Píxel de Retargeting
         res.send(`
             <!DOCTYPE html>
             <html lang="es">
@@ -250,7 +250,7 @@ app.get('/:alias', (req, res) => {
                 <style>
                     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; text-align: center; background: #07070b; color: #fff; margin: 0; padding-top: 80px; }
                     .box { background: #12121a; padding: 30px; border-radius: 12px; display: inline-block; width: 90%; max-width: 400px; border: 1px solid #2a2a3d; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-                    .ad-container { margin: 20px 0; min-height: 90px; background: #1a1a26; border: 1px solid #2a2a3d; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #888; font-size: 13px; }
+                    .ad-container { margin: 20px auto; width: 300px; min-height: 250px; background: #1a1a26; border: 1px solid #2a2a3d; border-radius: 8px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
                     #btn { display: none; margin-top: 20px; padding: 12px 20px; background: linear-gradient(135deg, #8b5cf6, #7c3aed); color: #fff; font-weight: bold; border: none; border-radius: 8px; cursor: pointer; text-decoration: none; width: 100%; box-sizing: border-box; font-size: 15px; box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3); }
                     #btn:hover { opacity: 0.9; }
                 </style>
@@ -260,9 +260,18 @@ app.get('/:alias', (req, res) => {
                     <h2 style="color: #a855f7; margin-top: 0;">LinkPulse</h2>
                     <p style="color: #9ca3af; font-size: 14px;">Tu enlace estará listo en <span id="countdown" style="color: #34d399; font-weight: bold;">5</span> segundos...</p>
                     
-                    <!-- ESPACIO PUBLICITARIO (Aquí irá tu AdSense / AdMob web) -->
+                    <!-- ESPACIO PUBLICITARIO (Adsterra Banner 300x250) -->
                     <div class="ad-container">
-                        Espacio Publicitario
+                        <script>
+                          atOptions = {
+                            'key' : 'f434940b00cac3b31afb1cee2d82482f',
+                            'format' : 'iframe',
+                            'height' : 250,
+                            'width' : 300,
+                            'params' : {}
+                          };
+                        </script>
+                        <script src="https://www.highrevenueformat.com/f434940b00cac3b31afb1cee2d82482f/invoke.js"></script>
                     </div>
 
                     <a id="btn" href="${link.url_destino}">Continuar al destino</a>
