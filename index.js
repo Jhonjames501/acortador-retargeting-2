@@ -7,7 +7,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // ==========================================
-// 1. BASE DE DATOS POSTGRESQL (SUPABASE)
+// 1. BASE DE DATOS POSTGRESQL (SUPABASE POOLER)
 // ==========================================
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
