@@ -1,5 +1,4 @@
 const express = require('express');
-const { Pool } = require('pg');
 const QRCode = require('qrcode');
 const app = express();
 
@@ -7,27 +6,12 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // ==========================================
-// 1. BASE DE DATOS POSTGRESQL (SUPABASE POOLER)
+// 1. ALMACENAMIENTO EN MEMORIA (Sin Base de Datos)
 // ==========================================
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: {
-        rejectUnauthorized: false
-    }
-});
-
-// Crear la tabla automáticamente si no existe al iniciar
-pool.query(`
-    CREATE TABLE IF NOT EXISTS links (
-        id SERIAL PRIMARY KEY,
-        url_destino TEXT NOT NULL,
-        alias TEXT UNIQUE NOT NULL,
-        clicks INTEGER DEFAULT 0,
-        pixel_id TEXT,
-        expires_at TEXT,
-        password TEXT
-    )
-`).catch(err => console.error('Error al crear la tabla en Supabase', err.message));
+// Nota: Como se guarda en memoria temporal, los enlaces se reiniciarán 
+// si el servidor gratuito de Render entra en suspensión por inactividad.
+let enlacesMemoria = [];
+let idCounter = 1;
 
 // ==========================================
 // 2. PANEL PRINCIPAL
@@ -41,8 +25,8 @@ app.get('/', async (req, res) => {
     }
 
     try {
-        const result = await pool.query(`SELECT * FROM links ORDER BY id DESC`);
-        const rows = result.rows;
+        // Ordenamos de forma descendiente simulando un ID mayor primero
+        const rows = [...enlacesMemoria].reverse();
         let enlacesHtml = '';
         
         if (rows && rows.length > 0) {
@@ -116,7 +100,7 @@ app.get('/', async (req, res) => {
                         <span class="logo-text">LinkPulse</span>
                         <span class="badge">B2B SUITE</span>
                     </div>
-                    <div class="status-tag">Estado: • Activo</div>
+                    <div class="status-tag">Estado: • Activo (Sin BD)</div>
                 </div>
 
                 <div class="main-container">
@@ -174,232 +158,231 @@ app.get('/', async (req, res) => {
         `);
     } catch (err) {
         console.error(err);
-        res.status(500).send("Error al cargar la base de datos.");
+        res.status(500).send("Error interno al cargar el panel.");
     }
 });
 
 // ==========================================
-// 3. CREAR NUEVO ENLACE (Con validación segura)
+// 3. CREAR NUEVO ENLACE (Guardando en Memoria)
 // ==========================================
-app.post('/create', async (req, res) => {
+app.post('/create', (req, res) => {
     let { url_destino, alias, pixel_id, password, expires_at } = req.body;
     const linkAlias = alias && alias.trim() !== '' ? alias.trim() : Math.random().toString(36).substring(2, 8);
 
-    try {
-        const check = await pool.query(`SELECT id FROM links WHERE alias = $1`, [linkAlias]);
-        if (check.rows.length > 0) {
-            return res.send(`<script>alert('El alias "${linkAlias}" ya está en uso. Por favor, elige otro.'); window.history.back();</script>`);
-        }
-
-        const query = `INSERT INTO links (url_destino, alias, pixel_id, password, expires_at) VALUES ($1, $2, $3, $4, $5)`;
-        await pool.query(query, [url_destino, linkAlias, pixel_id || null, password || null, expires_at || null]);
-        
-        res.redirect(`/?nuevo=${linkAlias}`);
-    } catch (err) {
-        console.error(err);
-        return res.send(`<script>alert('Hubo un error al guardar en la base de datos.'); window.history.back();</script>`);
+    // Verificar si el alias ya existe en el arreglo
+    const existe = enlacesMemoria.find(l => l.alias === linkAlias);
+    if (existe) {
+        return res.send(`<script>alert('El alias "${linkAlias}" ya está en uso. Por favor, elige otro.'); window.history.back();</script>`);
     }
+
+    // Guardar en memoria
+    const nuevoLink = {
+        id: idCounter++,
+        url_destino,
+        alias: linkAlias,
+        clicks: 0,
+        pixel_id: pixel_id || null,
+        password: password || null,
+        expires_at: expires_at || null
+    };
+
+    enlacesMemoria.push(nuevoLink);
+    res.redirect(`/?nuevo=${linkAlias}`);
 });
 
 // ==========================================
 // 4. REDIRECCIÓN, PÍXELES Y PÁGINA INTERMEDIA
 // ==========================================
-app.get('/:alias', async (req, res) => {
+app.get('/:alias', (req, res) => {
     const alias = req.params.alias;
 
-    try {
-        const result = await pool.query(`SELECT * FROM links WHERE alias = $1`, [alias]);
-        if (result.rows.length === 0) {
-            return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#fff; background:#07070b;'>Enlace no encontrado.</h2>");
+    const link = enlacesMemoria.find(l => l.alias === alias);
+    if (!link) {
+        return res.status(404).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#fff; background:#07070b;'>Enlace no encontrado.</h2>");
+    }
+
+    if (link.expires_at && link.expires_at.trim() !== '') {
+        const expiryDate = new Date(link.expires_at);
+        if (!isNaN(expiryDate.getTime()) && new Date() > expiryDate) {
+            return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Este enlace ha expirado.</h2>");
         }
+    }
 
-        const link = result.rows[0];
-
-        if (link.expires_at && link.expires_at.trim() !== '') {
-            const expiryDate = new Date(link.expires_at);
-            if (!isNaN(expiryDate.getTime()) && new Date() > expiryDate) {
-                return res.status(410).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Este enlace ha expirado.</h2>");
-            }
+    if (link.password) {
+        const userPwd = req.query.pwd;
+        if (userPwd !== link.password) {
+            return res.send(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>Protegido</title></head>
+                <body style="background: #07070b; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0;">
+                    <div style="width: 100%; max-width: 360px; background: #12121a; padding: 25px; border-radius: 10px; border: 1px solid #2a2a3d; text-align: center;">
+                        <h3 style="color: #a855f7; margin-top: 0;">Enlace Protegido</h3>
+                        <p style="font-size: 13px; color: #aaa;">Ingresa la contraseña para continuar:</p>
+                        <form method="GET">
+                            <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 11px; background: #1a1a26; border: 1px solid #2a2a3d; color: #fff; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box;">
+                            <button type="submit" style="width: 100%; padding: 11px; background: #8b5cf6; border: none; color: #fff; border-radius: 6px; cursor: pointer; font-weight: bold;">Acceder</button>
+                        </form>
+                    </div>
+                </body>
+                </html>
+            `);
         }
+    }
 
-        if (link.password) {
-            const userPwd = req.query.pwd;
-            if (userPwd !== link.password) {
-                return res.send(`
-                    <!DOCTYPE html>
-                    <html>
-                    <head><title>Protegido</title></head>
-                    <body style="background: #07070b; color: #fff; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin:0;">
-                        <div style="width: 100%; max-width: 360px; background: #12121a; padding: 25px; border-radius: 10px; border: 1px solid #2a2a3d; text-align: center;">
-                            <h3 style="color: #a855f7; margin-top: 0;">Enlace Protegido</h3>
-                            <p style="font-size: 13px; color: #aaa;">Ingresa la contraseña para continuar:</p>
-                            <form method="GET">
-                                <input type="password" name="pwd" placeholder="Contraseña" required style="width: 100%; padding: 11px; background: #1a1a26; border: 1px solid #2a2a3d; color: #fff; border-radius: 6px; margin-bottom: 12px; box-sizing: border-box;">
-                                <button type="submit" style="width: 100%; padding: 11px; background: #8b5cf6; border: none; color: #fff; border-radius: 6px; cursor: pointer; font-weight: bold;">Acceder</button>
-                            </form>
-                        </div>
-                    </body>
-                    </html>
-                `);
-            }
-        }
+    // Aumentar contador de clics
+    link.clicks += 1;
 
-        await pool.query(`UPDATE links SET clicks = clicks + 1 WHERE alias = $1`, [alias]);
-
-        res.send(`
-            <!DOCTYPE html>
-            <html lang="es">
-            <head>
-                <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>LinkPulse - Redirigiendo de forma segura...</title>
-                ${link.pixel_id ? `
-                <script>
-                  !function(f,b,e,v,n,t,s)
-                  {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-                  n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-                  if(!f._fbq)f._fbq=n;n.push(n.ready=!0;n.version='2.0';
-                  n.queue=[];t=b.createElement(e);t.async=!0;
-                  t.src=v;s=b.getElementsByTagName(e)[0];
-                  s.parentNode.insertBefore(t,s)}(window, document,'script',
-                  'https://connect.facebook.net/en_US/fbevents.js');
-                  fbq('init', '${link.pixel_id}');
-                  fbq('track', 'PageView');
-                </script>` : ''}
-                <style>
-                    body { 
-                        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
-                        background: #07070b; 
-                        color: #fff; 
-                        margin: 0; 
-                        display: flex; 
-                        justify-content: center; 
-                        align-items: center; 
-                        min-height: 100vh; 
-                    }
-                    .redirect-card { 
-                        background: #12121a; 
-                        padding: 24px; 
-                        border-radius: 16px; 
-                        width: 90%; 
-                        max-width: 380px; 
-                        border: 1px solid #2a2a3d; 
-                        box-shadow: 0 15px 35px rgba(0,0,0,0.6); 
-                        text-align: center;
-                    }
-                    .brand-header {
-                        display: flex;
-                        align-items: center;
-                        justify-content: center;
-                        gap: 8px;
-                        margin-bottom: 15px;
-                    }
-                    .brand-icon { background: #f59e0b; color: #000; font-weight: bold; padding: 3px 7px; border-radius: 5px; font-size: 12px; }
-                    .brand-name { font-weight: bold; font-size: 15px; color: #fff; letter-spacing: 0.5px; }
-                    
-                    .info-box {
-                        background: rgba(168, 85, 247, 0.08);
-                        border: 1px solid rgba(168, 85, 247, 0.2);
-                        padding: 10px 14px;
-                        border-radius: 8px;
-                        font-size: 13px;
-                        color: #d8b4fe;
-                        margin-bottom: 20px;
-                        line-height: 1.4;
-                    }
-                    .timer-text {
-                        color: #34d399;
-                        font-weight: bold;
-                    }
-                    
-                    .ad-container { 
-                        margin: 15px auto; 
-                        width: 300px; 
-                        min-height: 250px; 
-                        background: #1a1a26; 
-                        border: 1px solid #2a2a3d; 
-                        border-radius: 10px; 
-                        display: flex; 
-                        align-items: center; 
-                        justify-content: center; 
-                        overflow: hidden; 
-                    }
-                    
-                    #btn { 
-                        display: none; 
-                        margin-top: 20px; 
-                        padding: 14px; 
-                        background: linear-gradient(135deg, #8b5cf6, #7c3aed); 
-                        color: #fff; 
-                        font-weight: bold; 
-                        border: none; 
-                        border-radius: 8px; 
-                        cursor: pointer; 
-                        text-decoration: none; 
-                        width: 100%; 
-                        box-sizing: border-box; 
-                        font-size: 15px; 
-                        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4); 
-                        transition: opacity 0.2s;
-                    }
-                    #btn:hover { opacity: 0.9; }
-                </style>
-            </head>
-            <body>
-                <div class="redirect-card">
-                    <div class="brand-header">
-                        <div class="brand-icon">⚡</div>
-                        <span class="brand-name">LinkPulse</span>
-                    </div>
-
-                    <div class="info-box" id="status-msg">
-                        Espera <span class="timer-text" id="countdown">5</span> segundos para desbloquear tu destino de forma segura.
-                    </div>
-                    
-                    <!-- ESPACIO PUBLICITARIO (Adsterra Banner 300x250) -->
-                    <div class="ad-container">
-                        <script>
-                          atOptions = {
-                            'key' : 'f434940b00cac3b31afb1cee2d82482f',
-                            'format' : 'iframe',
-                            'height' : 250,
-                            'width' : 300,
-                            'params' : {}
-                          };
-                        </script>
-                        <script src="https://www.highrevenueformat.com/f434940b00cac3b31afb1cee2d82482f/invoke.js"></script>
-                    </div>
-
-                    <a id="btn" href="${link.url_destino}">Ir al enlace de destino &rarr;</a>
+    res.send(`
+        <!DOCTYPE html>
+        <html lang="es">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>LinkPulse - Redirigiendo de forma segura...</title>
+            ${link.pixel_id ? `
+            <script>
+              !function(f,b,e,v,n,t,s)
+              {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+              n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+              if(!f._fbq)f._fbq=n;n.push(n.ready=!0;n.version='2.0';
+              n.queue=[];t=b.createElement(e);t.async=!0;
+              t.src=v;s=b.getElementsByTagName(e)[0];
+              s.parentNode.insertBefore(t,s)}(window, document,'script',
+              'https://connect.facebook.net/en_US/fbevents.js');
+              fbq('init', '${link.pixel_id}');
+              fbq('track', 'PageView');
+            </script>` : ''}
+            <style>
+                body { 
+                    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; 
+                    background: #07070b; 
+                    color: #fff; 
+                    margin: 0; 
+                    display: flex; 
+                    justify-content: center; 
+                    align-items: center; 
+                    min-height: 100vh; 
+                }
+                .redirect-card { 
+                    background: #12121a; 
+                    padding: 24px; 
+                    border-radius: 16px; 
+                    width: 90%; 
+                    max-width: 380px; 
+                    border: 1px solid #2a2a3d; 
+                    box-shadow: 0 15px 35px rgba(0,0,0,0.6); 
+                    text-align: center;
+                }
+                .brand-header {
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 8px;
+                    margin-bottom: 15px;
+                }
+                .brand-icon { background: #f59e0b; color: #000; font-weight: bold; padding: 3px 7px; border-radius: 5px; font-size: 12px; }
+                .brand-name { font-weight: bold; font-size: 15px; color: #fff; letter-spacing: 0.5px; }
+                
+                .info-box {
+                    background: rgba(168, 85, 247, 0.08);
+                    border: 1px solid rgba(168, 85, 247, 0.2);
+                    padding: 10px 14px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    color: #d8b4fe;
+                    margin-bottom: 20px;
+                    line-height: 1.4;
+                }
+                .timer-text {
+                    color: #34d399;
+                    font-weight: bold;
+                }
+                
+                .ad-container { 
+                    margin: 15px auto; 
+                    width: 300px; 
+                    min-height: 250px; 
+                    background: #1a1a26; 
+                    border: 1px solid #2a2a3d; 
+                    border-radius: 10px; 
+                    display: flex; 
+                    align-items: center; 
+                    justify-content: center; 
+                    overflow: hidden; 
+                }
+                
+                #btn { 
+                    display: none; 
+                    margin-top: 20px; 
+                    padding: 14px; 
+                    background: linear-gradient(135deg, #8b5cf6, #7c3aed); 
+                    color: #fff; 
+                    font-weight: bold; 
+                    border: none; 
+                    border-radius: 8px; 
+                    cursor: pointer; 
+                    text-decoration: none; 
+                    width: 100%; 
+                    box-sizing: border-box; 
+                    font-size: 15px; 
+                    box-shadow: 0 4px 15px rgba(139, 92, 246, 0.4); 
+                    transition: opacity 0.2s;
+                }
+                #btn:hover { opacity: 0.9; }
+            </style>
+        </head>
+        <body>
+            <div class="redirect-card">
+                <div class="brand-header">
+                    <div class="brand-icon">⚡</div>
+                    <span class="brand-name">LinkPulse</span>
                 </div>
 
-                <script>
-                    let seconds = 5;
-                    let countdownEl = document.getElementById('countdown');
-                    let statusMsg = document.getElementById('status-msg');
-                    let btn = document.getElementById('btn');
+                <div class="info-box" id="status-msg">
+                    Espera <span class="timer-text" id="countdown">5</span> segundos para desbloquear tu destino de forma segura.
+                </div>
+                
+                <!-- ESPACIO PUBLICITARIO (Adsterra Banner 300x250) -->
+                <div class="ad-container">
+                    <script>
+                      atOptions = {
+                        'key' : 'f434940b00cac3b31afb1cee2d82482f',
+                        'format' : 'iframe',
+                        'height' : 250,
+                        'width' : 300,
+                        'params' : {}
+                      };
+                    </script>
+                    <script src="https://www.highrevenueformat.com/f434940b00cac3b31afb1cee2d82482f/invoke.js"></script>
+                </div>
 
-                    let timer = setInterval(() => {
-                        seconds--;
-                        if (countdownEl) countdownEl.innerText = seconds;
-                        
-                        if (seconds <= 0) {
-                            clearInterval(timer);
-                            statusMsg.style.background = 'rgba(16, 185, 129, 0.1)';
-                            statusMsg.style.borderColor = 'rgba(16, 185, 129, 0.3)';
-                            statusMsg.style.color = '#34d399';
-                            statusMsg.innerHTML = '¡Tu enlace está listo para continuar!';
-                            btn.style.display = 'block';
-                        }
-                    }, 1000);
-                </script>
-            </body>
-            </html>
-        `);
-    } catch (err) {
-        console.error(err);
-        return res.status(500).send("<h2 style='text-align:center; margin-top:50px; font-family:sans-serif; color:#ff5555; background:#07070b;'>Error interno del servidor.</h2>");
-    }
+                <a id="btn" href="${link.url_destino}">Ir al enlace de destino &rarr;</a>
+            </div>
+
+            <script>
+                let seconds = 5;
+                let countdownEl = document.getElementById('countdown');
+                let statusMsg = document.getElementById('status-msg');
+                let btn = document.getElementById('btn');
+
+                let timer = setInterval(() => {
+                    seconds--;
+                    if (countdownEl) countdownEl.innerText = seconds;
+                    
+                    if (seconds <= 0) {
+                        clearInterval(timer);
+                        statusMsg.style.background = 'rgba(16, 185, 129, 0.1)';
+                        statusMsg.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+                        statusMsg.style.color = '#34d399';
+                        statusMsg.innerHTML = '¡Tu enlace está listo para continuar!';
+                        btn.style.display = 'block';
+                    }
+                }, 1000);
+            </script>
+        </body>
+        </html>
+    `);
 });
 
 const PORT = process.env.PORT || 3000;
